@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Read — Points cumulatifs</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=DM+Sans:wght@300;400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0e0e10;
+    --surface: #18181c;
+    --border: rgba(255,255,255,0.07);
+    --accent: #7c6af7;
+    --accent2: #e26060;
+    --accent3: #4ecb8d;
+    --text: #f0f0f2;
+    --muted: #6b6b78;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .title-block h1 {
+    font-family: var(--mono);
+    font-size: clamp(1.6rem, 4vw, 2.4rem);
+    font-weight: 300;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+
+  .title-block p {
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-family: var(--mono);
+    margin-top: 0.25rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .refresh-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .refresh-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .refresh-btn.loading {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  .refresh-btn .spin {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .stat {
+    background: var(--surface);
+    padding: 1rem 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .stat-label {
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 1.6rem;
+    font-weight: 500;
+    line-height: 1;
+  }
+
+  .stat-value.positive { color: var(--accent3); }
+  .stat-value.negative { color: var(--accent2); }
+  .stat-value.neutral { color: var(--text); }
+  .stat-value.purple { color: var(--accent); }
+
+  .chart-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    position: relative;
+    flex: 1;
+  }
+
+  .chart-inner {
+    position: relative;
+    width: 100%;
+    height: clamp(280px, 45vh, 420px);
+  }
+
+  .status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .last-update {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.04em;
+  }
+
+  .legend {
+    display: flex;
+    gap: 1.25rem;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+
+  .legend span {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  #loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    z-index: 100;
+    transition: opacity 0.4s;
+  }
+
+  #loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .loading-text {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .loading-bar {
+    width: 200px;
+    height: 1px;
+    background: var(--border);
+    overflow: hidden;
+  }
+
+  .loading-bar-inner {
+    height: 100%;
+    background: var(--accent);
+    animation: load 1.5s ease-in-out infinite;
+  }
+
+  @keyframes load {
+    0% { width: 0; margin-left: 0; }
+    50% { width: 100%; margin-left: 0; }
+    100% { width: 0; margin-left: 100%; }
+  }
+
+  #error-msg {
+    display: none;
+    background: rgba(226,96,96,0.1);
+    border: 1px solid rgba(226,96,96,0.3);
+    color: var(--accent2);
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    letter-spacing: 0.03em;
+  }
+</style>
+</head>
+<body>
+
+<div id="loading-overlay">
+  <div class="loading-text">Chargement depuis Airtable…</div>
+  <div class="loading-bar"><div class="loading-bar-inner"></div></div>
+</div>
+
+<header>
+  <div class="title-block">
+    <h1>Read — Points cumulatifs</h1>
+    <p id="subtitle">jan 2023 → aujourd'hui</p>
+  </div>
+  <button class="refresh-btn" onclick="loadData()">
+    <span id="refresh-icon">↻</span> Rafraîchir
+  </button>
+</header>
+
+<div id="error-msg"></div>
+
+<div class="stats">
+  <div class="stat">
+    <span class="stat-label">Total cumulé</span>
+    <span class="stat-value" id="stat-total">—</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Point bas</span>
+    <span class="stat-value negative" id="stat-min">—</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Entrées</span>
+    <span class="stat-value purple" id="stat-count">—</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Dernière entrée</span>
+    <span class="stat-value neutral" id="stat-last">—</span>
+  </div>
+</div>
+
+<div class="chart-container">
+  <div class="chart-inner">
+    <canvas id="myChart" role="img" aria-label="Courbe cumulative des points"></canvas>
+  </div>
+</div>
+
+<div class="status-bar">
+  <div class="last-update" id="last-update">—</div>
+  <div class="legend">
+    <span><span class="legend-dot" style="background:#7c6af7"></span>Points cumulatifs</span>
+    <span><span class="legend-dot" style="background:rgba(226,96,96,0.6)"></span>Zéro</span>
+  </div>
+</div>
+
+<script>
+const API_TOKEN = 'patBgUYw9kJF1FBiw.c0b1856d4ab39b644117a55ab880cd37b9d78eda5873a322b4ed5dd4914a5ee1';
+const BASE_ID = 'appHYdJS3Dz0tMbb2';
+const TABLE_NAME = 'Read';
+
+let chartInstance = null;
+
+async function fetchAllRecords() {
+  let records = [];
+  let offset = null;
+
+  do {
+    let url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(TABLE_NAME)}?pageSize=100&fields%5B%5D=Date&fields%5B%5D=Point`;
+    if (offset) url += `&offset=${offset}`;
+
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${API_TOKEN}` }
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message || `HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    records = records.concat(data.records);
+    offset = data.offset || null;
+  } while (offset);
+
+  return records;
+}
+
+function processRecords(records) {
+  const datePoints = {};
+
+  for (const r of records) {
+    const date = r.fields?.Date;
+    const point = r.fields?.Point;
+    if (!date || point === undefined || point === null) continue;
+    const d = date.slice(0, 10);
+    datePoints[d] = (datePoints[d] || 0) + Number(point);
+  }
+
+  const sortedDates = Object.keys(datePoints).sort();
+  const cumValues = [];
+  let total = 0;
+  for (const d of sortedDates) {
+    total += datePoints[d];
+    cumValues.push(total);
+  }
+
+  return { dates: sortedDates, values: cumValues };
+}
+
+function buildChart(dates, values) {
+  const ctx = document.getElementById('myChart').getContext('2d');
+
+  if (chartInstance) {
+    chartInstance.destroy();
+    chartInstance = null;
+  }
+
+  const minVal = Math.min(...values);
+  const maxVal = Math.max(...values);
+
+  chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates,
+      datasets: [{
+        label: 'Points cumulatifs',
+        data: values,
+        borderColor: '#7c6af7',
+        backgroundColor: 'rgba(124,106,247,0.08)',
+        borderWidth: 1.5,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: '#7c6af7',
+        fill: true,
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e1e24',
+          borderColor: 'rgba(255,255,255,0.1)',
+          borderWidth: 1,
+          titleColor: '#6b6b78',
+          titleFont: { family: 'DM Mono', size: 11 },
+          bodyColor: '#f0f0f2',
+          bodyFont: { family: 'DM Mono', size: 13 },
+          padding: 12,
+          callbacks: {
+            title: (items) => items[0].label,
+            label: (item) => ` ${item.raw > 0 ? '+' : ''}${item.raw} pts`
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'category',
+          ticks: {
+            color: '#4a4a55',
+            maxTicksLimit: 14,
+            maxRotation: 0,
+            font: { family: 'DM Mono', size: 10 },
+            callback: function(val, index) {
+              const d = this.getLabelForValue(val);
+              if (d && d.endsWith('-01')) {
+                const dt = new Date(d);
+                return dt.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
+              }
+              return null;
+            }
+          },
+          grid: { color: 'rgba(255,255,255,0.04)' },
+          border: { color: 'rgba(255,255,255,0.07)' }
+        },
+        y: {
+          ticks: {
+            color: '#4a4a55',
+            font: { family: 'DM Mono', size: 10 },
+            callback: v => (v >= 0 ? '+' : '') + v
+          },
+          grid: {
+            color: ctx => ctx.tick.value === 0
+              ? 'rgba(226,96,96,0.35)'
+              : 'rgba(255,255,255,0.04)',
+            lineWidth: ctx => ctx.tick.value === 0 ? 1.5 : 1
+          },
+          border: { color: 'rgba(255,255,255,0.07)' }
+        }
+      }
+    }
+  });
+}
+
+function updateStats(dates, values, count) {
+  const total = values[values.length - 1];
+  const minVal = Math.min(...values);
+  const lastDate = dates[dates.length - 1];
+
+  const totalEl = document.getElementById('stat-total');
+  totalEl.textContent = (total >= 0 ? '+' : '') + total + ' pts';
+  totalEl.className = 'stat-value ' + (total >= 0 ? 'positive' : 'negative');
+
+  document.getElementById('stat-min').textContent = minVal + ' pts';
+  document.getElementById('stat-count').textContent = count;
+
+  const d = new Date(lastDate);
+  document.getElementById('stat-last').textContent =
+    d.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' });
+
+  document.getElementById('last-update').textContent =
+    'Mis à jour le ' + new Date().toLocaleString('fr-FR', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+}
+
+async function loadData() {
+  const btn = document.querySelector('.refresh-btn');
+  const icon = document.getElementById('refresh-icon');
+  const errEl = document.getElementById('error-msg');
+
+  btn.classList.add('loading');
+  icon.classList.add('spin');
+  errEl.style.display = 'none';
+
+  try {
+    const records = await fetchAllRecords();
+    const { dates, values } = processRecords(records);
+    buildChart(dates, values);
+    updateStats(dates, values, records.length);
+  } catch (err) {
+    errEl.style.display = 'block';
+    errEl.textContent = '⚠ Erreur : ' + err.message;
+    console.error(err);
+  } finally {
+    btn.classList.remove('loading');
+    icon.classList.remove('spin');
+    document.getElementById('loading-overlay').classList.add('hidden');
+  }
+}
+
+// Initial load
+loadData();
+</script>
+</body>
+</html>
